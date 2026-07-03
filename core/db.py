@@ -84,3 +84,44 @@ def init_db(db_path: Path = _DEFAULT_PATH) -> Path:
         conn.executescript(_SCHEMA)
     log.info("db ready at %s", db_path)
     return db_path 
+
+def add_topic(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH) -> int | None :
+    """
+    Add a new topic to the database. Returns the topic id if successful, or None if the topic already exists.
+    """
+    try:
+        with _connect(db_path) as conn:
+            cur=conn.execute(
+                "INSERT INTO topics (slack_id, keyword, added_at) VALUES (?, ?, ?)",
+                (slack_id, keyword.strip().lower(), _now())
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        log.debug("already tracked by %s: %s", slack_id, keyword)
+        return None 
+            
+def get_active_topics(slack_id: str, db_path: Path = _DEFAULT_PATH) -> list[sqlite3.Row]:
+    """
+    Get all active topics for a given_slack_id. Returns a list of sqlite3.Row objects.
+    has a sertial column with 1,2,3,4.... which is displayed by /mel-atcive 
+    and /mel-edit {serial} resolves against this
+
+    """
+    with _connect(db_path) as conn:
+        return conn.execute(
+            """SELECT *, ROW_NUMBER() OVER (ORDER BY added_at) AS serial 
+            FROM topics 
+            WHERE slack_id = ? AND active = 1
+            ORDER BY added_at""",
+            (slack_id,)
+        ).fetchall()
+    
+
+def resolve_serial(slack_id: str, serial: int, db_path: Path = _DEFAULT_PATH) -> sqlite3.Row | None:
+    """
+    resolve a serial number to a topic for a given slack_id. Returns the topic row if found, or None if not found.
+    """
+
+    rows = get_active_topics(slack_id, db_path)
+    # serial is 1-indexed from the display, list is 0-indexed
+    return rows[serial-1] if 0<serial<=len(rows) else None
