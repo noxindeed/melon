@@ -1,6 +1,7 @@
 import sqlite3
 import logging 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path 
 from typing import Generator 
 
@@ -9,6 +10,10 @@ log = logging.getLogger(__name__)
 #resolve db path relative to ts file so the projec is portable 
 #override by passing path in tests
 _DEFAULT_PATH = Path(__file__).parent.parent/ "data"/ "tracker.db"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 #connection 
 @contextmanager
@@ -33,7 +38,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS topics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     slack_id TEXT NOT NULL,
-    keyword TEXT NOT NULL UNIQUE,
+    keyword TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
     added_at TEXT NOT NULL
     UNIQUE(slack_id, keyword)
@@ -54,16 +59,12 @@ CREATE TABLE IF NOT EXISTS sources (
     slack_id TEXT NOT NULL,
     topic_id INTEGER REFERENCES topics(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
-    UNIQUE(slack_id, url)
+    label TEXT,
+    added_at TEXT NOT NULL,
+    UNIQUE(slack_id, topic_id,url)
 );
 
-CREATE TABLE IF NOT EXISTS subscribers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    slack_id TEXT NOT NULL,
-    topic_id INTEGER REFERENCES topics(id) ON DELETE CASCADE,
-    joined_at TEXT NOT NULL,
-    UNIQUE(slack_id, topic_id)
-);
+
 
 CREATE INDEX IF NOT EXISTS idx_signals_topic ON signals(topic_id);
 CREATE INDEX IF NOT EXISTS idx_signals_caught ON signals(caught_at DESC);
@@ -84,6 +85,10 @@ def init_db(db_path: Path = _DEFAULT_PATH) -> Path:
         conn.executescript(_SCHEMA)
     log.info("db ready at %s", db_path)
     return db_path 
+
+
+#topics
+
 
 def add_topic(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH) -> int | None :
     """
@@ -120,8 +125,28 @@ def get_active_topics(slack_id: str, db_path: Path = _DEFAULT_PATH) -> list[sqli
 def resolve_serial(slack_id: str, serial: int, db_path: Path = _DEFAULT_PATH) -> sqlite3.Row | None:
     """
     resolve a serial number to a topic for a given slack_id. Returns the topic row if found, or None if not found.
+    also called by /mel-edit {serial} before touching sources
     """
 
     rows = get_active_topics(slack_id, db_path)
     # serial is 1-indexed from the display, list is 0-indexed
     return rows[serial-1] if 0<serial<=len(rows) else None
+
+
+def deactivate_topic(slack_id: str, topic_id: int, db_path: Path = _DEFAULT_PATH) -> bool:
+    """Soft delete, scanning is stopped but history is preserved """
+
+    with _connect(db_path) as conn :
+        cur = conn.execute(
+            "UPDATE topics SET active = 0 WHERE id = ? AND slack_id = ?"
+            ,(topic_id, slack_id),
+        
+        )
+        return cur.rowcount > 0  # true if row was updated otherwise gives false
+    
+def get_topic_by_keyword(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH)-> sqlite3.Row | None:
+    with _connect(db_path) as conn:
+        return conn.execute(
+            "SELECT * FROM topics WHERE keyword = ? AND slack_id = ?",
+            (keyword.strip().lower(), slack_id)
+        ).fetchone()
