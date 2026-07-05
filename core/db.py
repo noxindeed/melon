@@ -209,4 +209,30 @@ def signal_history(
             (topic_id, limit)
         ).fetchall()
 
+#sources 
 
+def add_source(
+        slack_id: str,
+        url: str,
+        label : str | None = None,
+        topic_id: int | None = None,
+        db_path: Path = _DEFAULT_PATH,
+        
+) -> int | None:
+    """
+    add a customn news source for a user 
+    topic id = None  is global and applies to all trackings
+    topic id = <id> is scoped to a single only
+    """
+    try:
+        with _connect(db_path) as conn:
+            cur = conn.execute(
+                """ INSERT INTO sources (slack_id, topic_id, url, label, added_at)
+                VALUES (?, ?, ?, ?, ?)""",
+                (slack_id, topic_id, url, label, _now()),
+
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        log.debug("source already exists for %s: %s", slack_id, url)
+        return None
