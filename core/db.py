@@ -236,3 +236,45 @@ def add_source(
     except sqlite3.IntegrityError:
         log.debug("source already exists for %s: %s", slack_id, url)
         return None
+
+def remove_source(slack_id: str, source_id: int, db_path: Path = _DEFAULT_PATH) -> bool:
+    """remove a source for a user"""
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM sources WHERE id = ? AND slack_id = ?",
+            (source_id, slack_id)
+
+
+        )
+        return cur.rowcount > 0
+    
+def get_sources(
+        slack_id: str,
+        topic_id: int | None = None,
+        db_path: Path = _DEFAULT_PATH,
+
+)-> list[sqlite3.Row]:
+    """
+    fetch sources for a user
+    topic_id=None  > global sources only (/mel-edit global view).
+    topic_id=<id>  >  scoped + globals merged, scoped listed first.
+    
+    called by scraper for feed list
+    """
+
+    with _connect(db_path) as conn:
+        if topic_id is None:
+            return conn.execute(
+                """SELECT * FROM sources 
+                WHERE slack_id = ? AND topic_id IS NULL
+                ORDER BY added_at""",
+                (slack_id,),
+                
+                
+            ).fetchall()
+        return conn.execute(
+            """SELECT * FROM sources
+            WHERE slack_id = ? AND (topic_id = ? OR topic_id IS NULL)
+            ORDER BY topic_id IS NULLS LAST, added_at""",
+            (slack_id, topic_id)
+        ).fetchall()
