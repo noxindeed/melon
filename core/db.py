@@ -3,7 +3,7 @@ import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path 
-from typing import Generator 
+from typing import Generator, Optional 
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS topics (
     slack_id TEXT NOT NULL,
     keyword TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
-    added_at TEXT NOT NULL
+    added_at TEXT NOT NULL,
     UNIQUE(slack_id, keyword)
 
 );
@@ -90,7 +90,7 @@ def init_db(db_path: Path = _DEFAULT_PATH) -> Path:
 #topics
 
 
-def add_topic(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH) -> int | None :
+def add_topic(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH) -> Optional[int] :
     """
     Add a new topic to the database. Returns the topic id if successful, or None if the topic already exists.
     """
@@ -122,7 +122,7 @@ def get_active_topics(slack_id: str, db_path: Path = _DEFAULT_PATH) -> list[sqli
         ).fetchall()
     
 
-def resolve_serial(slack_id: str, serial: int, db_path: Path = _DEFAULT_PATH) -> sqlite3.Row | None:
+def resolve_serial(slack_id: str, serial: int, db_path: Path = _DEFAULT_PATH) -> Optional[sqlite3.Row]:
     """
     resolve a serial number to a topic for a given slack_id. Returns the topic row if found, or None if not found.
     also called by /mel-edit {serial} before touching sources
@@ -144,7 +144,7 @@ def deactivate_topic(slack_id: str, topic_id: int, db_path: Path = _DEFAULT_PATH
         )
         return cur.rowcount > 0  # true if row was updated otherwise gives false
     
-def get_topic_by_keyword(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH)-> sqlite3.Row | None:
+def get_topic_by_keyword(keyword: str, slack_id: str, db_path: Path = _DEFAULT_PATH)-> Optional[sqlite3.Row]:
     with _connect(db_path) as conn:
         return conn.execute(
             "SELECT * FROM topics WHERE keyword = ? AND slack_id = ?",
@@ -158,8 +158,8 @@ def store_signal(
         topic_id: int,
         title: str,
         url: str,
-        summary: str | None = None ,
-        db_path: Path = _DEFAULT_PATH,) -> int | None:
+    summary: Optional[str] = None ,
+    db_path: Path = _DEFAULT_PATH,) -> Optional[int]:
     """"""""
     try:
         with  _connect(db_path) as conn:
@@ -214,11 +214,11 @@ def signal_history(
 def add_source(
         slack_id: str,
         url: str,
-        label : str | None = None,
-        topic_id: int | None = None,
+    label : Optional[str] = None,
+    topic_id: Optional[int] = None,
         db_path: Path = _DEFAULT_PATH,
         
-) -> int | None:
+) -> Optional[int]:
     """
     add a customn news source for a user 
     topic id = None  is global and applies to all trackings
@@ -250,7 +250,7 @@ def remove_source(slack_id: str, source_id: int, db_path: Path = _DEFAULT_PATH) 
     
 def get_sources(
         slack_id: str,
-        topic_id: int | None = None,
+    topic_id: Optional[int] = None,
         db_path: Path = _DEFAULT_PATH,
 
 )-> list[sqlite3.Row]:
@@ -275,6 +275,6 @@ def get_sources(
         return conn.execute(
             """SELECT * FROM sources
             WHERE slack_id = ? AND (topic_id = ? OR topic_id IS NULL)
-            ORDER BY topic_id IS NULLS LAST, added_at""",
+            ORDER BY topic_id IS NULL, added_at""",
             (slack_id, topic_id)
         ).fetchall()
