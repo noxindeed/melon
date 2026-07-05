@@ -150,3 +150,63 @@ def get_topic_by_keyword(keyword: str, slack_id: str, db_path: Path = _DEFAULT_P
             "SELECT * FROM topics WHERE keyword = ? AND slack_id = ?",
             (keyword.strip().lower(), slack_id)
         ).fetchone()
+
+
+#signals
+
+def store_signal(
+        topic_id: int,
+        title: str,
+        url: str,
+        summary: str | None = None ,
+        db_path: Path = _DEFAULT_PATH,) -> int | None:
+    """"""""
+    try:
+        with  _connect(db_path) as conn:
+            cur = conn.execute(
+                """INSERT INTO signals (topic_id, title, url, summary, caught_at) VALUES (?, ?, ?, ?, ?)""",
+                (topic_id, title, url, summary, _now())
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        log.debug("already stored: %s", url )
+        return None
+    
+def get_recent_signals(
+        topic_id: int,
+        limit: int = 3,
+        db_path: Path= _DEFAULT_PATH
+
+)-> list[sqlite3.Row]:
+    """ last n signals for a topic which gemini gets as ctxt"""
+    with _connect(db_path) as conn:
+        return conn.execute(
+            """SELECT * FROM signals WHERE topic_id = ?
+            ORDER BY caught_at DESC LIMIT ?""",
+            (topic_id, limit),
+
+        ).fetchall()
+    
+def known_urls(topic_id: int, db_path: Path = _DEFAULT_PATH)-> set[str]:
+    """stores every url for a topic and is checkd by scraper before clustering 
+    returns a set"""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT url FROM signals WHERE topic_id = ?", (topic_id,)
+        ).fetchall()
+        return {row["url"] for row in rows}
+    
+
+def signal_history(
+        topic_id: int,
+        limit: int = 20,
+        db_path: Path = _DEFAULT_PATH,
+) -> list[sqlite3.Row]:
+    """caught signals for a topic in reverse order """
+    with _connect(db_path) as conn:
+        return conn.execute(
+            """ SELECT * FROM signals WHERE topic_id = ? ORDER BY caught_at DESC LIMIT ?""",
+            (topic_id, limit)
+        ).fetchall()
+
+
