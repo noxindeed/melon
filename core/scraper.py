@@ -14,3 +14,31 @@ _UA = (
 class ScrapeError(Exception):
     """a feed could not be reached  or xml could not be parsed"""
 
+#public 
+
+def fetch_for_topic(
+        keyword: str,
+        source_urls: list[str] | None = None,
+        timeout: int = 10,
+
+) -> list[dict]:
+    """
+    need to explain ts later
+    """
+    templates  = source_urls or [_DEFAULT_FEED]
+    seen_in_batch: set[str] = set()
+    headlines: list[dict]=[]
+
+    for template in templates:
+        try:
+            items = _fetch_one_feed(template,keyword,timeout)
+        except ScrapeError as exc:
+            log.warning("feed skipped: %s (%s)", template, exc)
+            continue
+        for item in items:
+            if item["url"] in seen_in_batch:
+                continue
+            seen_in_batch.add(item["url"])
+            headlines.append(item)
+    return headlines 
+
